@@ -15,19 +15,22 @@ logger = logging.getLogger(__name__)
 
 
 class MySTBuilderMixin:
-
     def transform_internal_links(self, node):
+        """
+        Rewrite internal document links to point to the anticipated MyST JSON document path
+
+        :param node: docutils tree
+        """
         docnames = set(self.env.found_docs)
         for link in find_by_type("link", node):
             parsed_uri = urllib.parse.urlparse(link["url"])
             if parsed_uri.scheme or not parsed_uri.path:
                 continue
-            if parsed_uri.path in docnames:
-                # Add JSON suffix to path
-                new_path = f"{parsed_uri.path}.myst.json"
-                link["url"] = urllib.parse.urlunparse(
-                    parsed_uri._replace(path=new_path)
-                )
+            if parsed_uri.path not in docnames:
+                continue
+            # Add JSON suffix to path
+            new_path = f"{parsed_uri.path}.myst.json"
+            link["url"] = urllib.parse.urlunparse(parsed_uri._replace(path=new_path))
 
 
 class MySTBuilder(MySTBuilderMixin, Builder):
@@ -49,13 +52,18 @@ class MySTBuilder(MySTBuilderMixin, Builder):
             if docname not in self.env.all_docs:
                 yield docname
                 continue
+
+            # Determine age of target
             target_path = self._get_output_path(docname)
             try:
                 targetmtime = os.path.getmtime(target_path)
             except Exception:
                 targetmtime = 0
+
+            # Determine if source is newer than target
+            source_path = self.env.doc2path(docname)
             try:
-                srcmtime = os.path.getmtime(self.env.doc2path(docname))
+                srcmtime = os.path.getmtime(source_path)
                 if srcmtime > targetmtime:
                     yield docname
             except OSError:
@@ -201,7 +209,7 @@ class MySTXRefBuilder(MySTBuilderMixin, Builder):
         ]
         references = [*page_references, *target_references]
 
-        xref = {"version": "1", "myst": "1.2.9", "references": references}
+        xref = {"version": "1", "myst": "1.3.6", "references": references}
         with open(os.path.join(self.outdir, "myst.xref.json"), "w") as f:
             json.dump(xref, f, indent=2)
 
