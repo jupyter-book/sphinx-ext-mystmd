@@ -5,7 +5,7 @@ import inspect
 from sphinx.util import logging
 
 
-from .utils import normalize_label   
+from .utils import normalize_label
 
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,6 @@ def is_context_manager(obj):
 
 
 class Visitor(NodeVisitor):
-
     def __init__(self, document):
         super().__init__(document)
 
@@ -63,7 +62,6 @@ class Visitor(NodeVisitor):
 
 
 class MySTNodeVisitor(Visitor):
-
     def __init__(self, document):
         super().__init__(document)
 
@@ -77,8 +75,8 @@ class MySTNodeVisitor(Visitor):
     def parent_result(self):
         return self._result_stack[-1] if self._result_stack else None
 
-    @property
-    def result(self):
+    def visit_with_result(self, doctree):
+        doctree.walkabout(self)
         return self._result
 
     def inherit_node_info(self, node, docutils_node):
@@ -378,17 +376,14 @@ class MySTNodeVisitor(Visitor):
         )
 
     def visit_label(self, node):
-
         logger.warning("`label` node not implemented")
         return SkipChildren
 
     def visit_citation(self, node):
-
         logger.warning("`citation` node not implemented")
         return SkipChildren
 
     def visit_legend(self, node):
-
         logger.warning("`legend` node not implemented")
         return SkipChildren
 

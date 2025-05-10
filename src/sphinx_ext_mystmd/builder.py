@@ -29,6 +29,7 @@ class MySTBuilderMixin:
             if parsed_uri.path not in docnames:
                 continue
             # Add JSON suffix to path
+            # TODO: what happens for the xref case? what do the links do?
             new_path = f"{parsed_uri.path}.myst.json"
             link["url"] = urllib.parse.urlunparse(parsed_uri._replace(path=new_path))
 
@@ -72,8 +73,7 @@ class MySTBuilder(MySTBuilderMixin, Builder):
 
     def write_doc(self, docname, doctree):
         visitor = MySTNodeVisitor(doctree)
-        doctree.walkabout(visitor)
-        mdast = visitor.result
+        mdast = visitor.visit_with_result(doctree)
 
         self.transform_internal_links(mdast)
 
@@ -128,8 +128,7 @@ class MySTXRefBuilder(MySTBuilderMixin, Builder):
 
     def write_doc(self, docname, doctree):
         visitor = MySTNodeVisitor(doctree)
-        doctree.walkabout(visitor)
-        mdast = visitor.result
+        mdast = doctree.walkabout(visitor)
 
         self.transform_internal_links(mdast)
 
@@ -142,7 +141,7 @@ class MySTXRefBuilder(MySTBuilderMixin, Builder):
         with open(self.env.doc2path(docname), "rb") as f:
             sha256 = hashlib.sha256(f.read()).hexdigest()
 
-        heading = next(find_by_type("heading", visitor.result), None)
+        heading = next(find_by_type("heading", mdast), None)
         if heading is not None:
             title = to_text(heading)
         else:
@@ -160,7 +159,7 @@ class MySTXRefBuilder(MySTBuilderMixin, Builder):
                         "title": title,
                         "content_includes_title": title is not None,
                     },
-                    "mdast": visitor.result,
+                    "mdast": mdast,
                     "references": {"cite": {"order": [], "data": {}}},
                 },
                 f,
