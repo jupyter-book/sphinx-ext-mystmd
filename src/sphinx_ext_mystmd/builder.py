@@ -43,7 +43,10 @@ class MySTBuilder(MySTBuilderMixin, Builder):
 
     def _get_output_path(self, doc_name):
         target_stem = self._slugify(doc_name)
-        return os.path.join(self.outdir, f"{target_stem}.myst.json")
+        return pathlib.Path(self.outdir) / f"{target_stem}.myst.json"
+
+    def _get_source_path(self, doc_name):
+        return pathlib.Path(self.env.doc2path(doc_name))
 
     def prepare_writing(self, docnames):
         logger.info(f"About to write {docnames}")
@@ -62,7 +65,7 @@ class MySTBuilder(MySTBuilderMixin, Builder):
                 targetmtime = 0
 
             # Determine if source is newer than target
-            source_path = self.env.doc2path(docname)
+            source_path = self._get_source_path(docname)
             try:
                 srcmtime = os.path.getmtime(source_path)
                 if srcmtime > targetmtime:
@@ -71,13 +74,13 @@ class MySTBuilder(MySTBuilderMixin, Builder):
                 # source doesn't exist anymore
                 pass
 
-    def write_doc(self, docname, doctree):
-        visitor = MySTNodeVisitor(doctree)
-        mdast = visitor.visit_with_result(doctree)
+    def write_doc(self, doc_name, doc_tree):
+        visitor = MySTNodeVisitor(doc_tree)
+        mdast = visitor.visit_with_result(doc_tree)
 
         self.transform_internal_links(mdast)
 
-        output_path = pathlib.Path(self._get_output_path(docname))
+        output_path = self._get_output_path(doc_name)
         output_path.parent.mkdir(exist_ok=True)
 
         with open(output_path, "w") as f:
@@ -97,13 +100,45 @@ class MySTBuilder(MySTBuilderMixin, Builder):
 class MySTXRefBuilder(MySTBuilderMixin, Builder):
     name = "myst-xref"
 
+    AST_VERSION = "1"
+    MYST_VERSION = "1.36.0"
+
     def _slugify(self, path):
         name = os.path.basename(path)
         return title_to_name(name)
 
-    def _get_xref_path(self, doc_name):
+    def _get_target_path(self, doc_name):
         target_stem = self._slugify(doc_name)
-        return os.path.join(self.outdir, "content", f"{target_stem}.json")
+        return pathlib.Path(self.outdir) / "content" / f"{target_stem}.json"
+
+    def _get_source_path(self, doc_name):
+        return pathlib.Path(self.env.doc2path(doc_name))
+
+    def _xref_kind_for_node(self, node):
+        if node["type"] == "container":
+            return node.get("kind", "figure")
+
+        if "kind" in node:
+            return f"{node['type']}:{node['kind']}"
+
+        return node["type"]
+
+    def _get_written_target_references(self, doc):
+        path = self._get_target_path(doc)
+        slug = self._slugify(doc)
+
+        with open(path, "r") as f:
+            data = json.load(f)
+
+        mdast = data["mdast"]
+        for node in breadth_first_walk(mdast):
+            if "identifier" in node:
+                yield {
+                    "identifier": node["identifier"],
+                    "kind": self._xref_kind_for_node(node),
+                    "data": os.fspath(path),
+                    "url": f"/{slug}",
+                }
 
     def prepare_writing(self, docnames):
         logger.info(f"About to write {docnames}")
@@ -113,7 +148,7 @@ class MySTXRefBuilder(MySTBuilderMixin, Builder):
             if docname not in self.env.all_docs:
                 yield docname
                 continue
-            target_path = self._get_xref_path(docname)
+            target_path = self._get_target_path(docname)
             try:
                 targetmtime = os.path.getmtime(target_path)
             except Exception:
@@ -126,34 +161,39 @@ class MySTXRefBuilder(MySTBuilderMixin, Builder):
                 # source doesn't exist anymore
                 pass
 
-    def write_doc(self, docname, doctree):
-        visitor = MySTNodeVisitor(doctree)
-        mdast = doctree.walkabout(visitor)
+    def write_doc(self, doc_name, doc_tree):
+        visitor = MySTNodeVisitor(doc_tree)
+        mdast = visitor.visit_with_result(doc_tree)
 
         self.transform_internal_links(mdast)
 
-        slug = self._slugify(docname)
-        xref_path = self._get_xref_path(docname)
+        slug = self._slugify(doc_name)
 
-        json_xref_dst = pathlib.Path(xref_path)
-        json_xref_dst.parent.mkdir(exist_ok=True)
+        target_path = self._get_target_path(doc_name)
+        source_path = self._get_source_path(doc_name)
 
-        with open(self.env.doc2path(docname), "rb") as f:
-            sha256 = hashlib.sha256(f.read()).hexdigest()
+        # Ensure target directory exists
+        target_path.parent.mkdir(exist_ok=True)
 
+        # Hash the source
+        with open(source_path, "rb") as f:
+            contents = f.read()
+        sha256 = hashlib.sha256(contents).hexdigest()
+
+        # Try to lift title
         heading = next(find_by_type("heading", mdast), None)
         if heading is not None:
             title = to_text(heading)
         else:
             title = None
 
-        with open(json_xref_dst, "w") as f:
+        with open(target_path, "w") as f:
             json.dump(
                 {
                     "kind": "Article",
                     "sha256": sha256,
                     "slug": slug,
-                    "location": f"/{docname}",
+                    "location": f"/{doc_name}",
                     "dependencies": [],
                     "frontmatter": {
                         "title": title,
@@ -166,36 +206,12 @@ class MySTXRefBuilder(MySTBuilderMixin, Builder):
                 indent=2,
             )
 
-    def _xref_kind_for_node(self, node):
-        if node["type"] == "container":
-            return node.get("kind", "figure")
-        if "kind" in node:
-            return f"{node['type']}:{node['kind']}"
-        return node["type"]
-
-    def _get_written_target_references(self, doc):
-        path = self._get_xref_path(doc)
-        slug = self._slugify(doc)
-
-        with open(path, "r") as f:
-            data = json.load(f)
-
-        mdast = data["mdast"]
-        for node in breadth_first_walk(mdast):
-            if "identifier" in node:
-                yield {
-                    "identifier": node["identifier"],
-                    "kind": self._xref_kind_for_node(node),
-                    "data": self._get_xref_path(doc),
-                    "url": f"/{slug}",
-                }
-
     def finish(self):
         page_references = [
             {
                 "kind": "page",
                 "url": f"/{self._slugify(n)}",
-                "data": self._get_xref_path(n),
+                "data": os.fspath(self._get_target_path(n)),
             }
             for n in self.env.found_docs
         ]
@@ -208,7 +224,11 @@ class MySTXRefBuilder(MySTBuilderMixin, Builder):
         ]
         references = [*page_references, *target_references]
 
-        xref = {"version": "1", "myst": "1.3.6", "references": references}
+        xref = {
+            "version": self.AST_VERSION,
+            "myst": self.MYST_VERSION,
+            "references": references,
+        }
         with open(os.path.join(self.outdir, "myst.xref.json"), "w") as f:
             json.dump(xref, f, indent=2)
 
