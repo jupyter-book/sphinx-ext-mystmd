@@ -3,12 +3,14 @@
 A Sphinx extension to build MyST-MD AST from a Sphinx project. This can be used for:
 
 1. Embedding API documentation in a MyST project
-2. Providing MyST xref support for a deployed Sphinx project (gradual transition)
+2. Providing MyST XRef support for a deployed Sphinx project (gradual transition)
 
 Add this extension to your `conf.py` e.g.
+
 ```python
 extensions = ["sphinx_ext_mystmd"]
 ```
+
 in order to be able to use the `myst` builder, e.g.
 
 ```shell
@@ -24,15 +26,16 @@ project:
     - title: Sphinx Build
       children:
         - pattern: <BUILDDIR>/**.myst.json
-
 ```
 
-You can also build an xref distribution for your site, which allows MyST projects to richly cross-reference into your documentation. 
+You can also build an XRef distribution for your site, which allows MyST projects to richly cross-reference into your documentation.
 
 Running
+
 ```shell
 sphinx-build -b myst-xref . <BUILDDIR>
 ```
+
 will generate a `myst.xref.json` in `<BUILDDIR>`. The contents of `<BUILDDIR>` should be added to your site's root directory.
 
 > [!WARNING]
