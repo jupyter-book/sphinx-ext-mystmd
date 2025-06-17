@@ -343,7 +343,7 @@ class MySTNodeVisitor(Visitor):
         return SkipChildren
 
     def visit_doctest_block(self, node):
-        logger.warning("`doctest_block` node not implemented")
+        self.push_myst_node({"type": "code", "value": str(node.children[0])}, node)
         return SkipChildren
 
     def visit_table(self, node):
